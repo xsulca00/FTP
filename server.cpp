@@ -79,7 +79,7 @@ string make_command(Flags f, const string& file) {
 
 
 int create_socket() {
-    int socket {socket(AF_INET, SOCK_STREAM, 0)};
+    int socket {::socket(AF_INET, SOCK_STREAM, 0)};
     if (socket <= 0) throw runtime_error{"Cannot create socket!"};
     return socket;
 }
@@ -89,7 +89,7 @@ void send_request(int socket, const string& command) {
     if (bytes < 0) perror("sendto");
 }
 
-string recieve_response(int socket, ssize_t len) {
+string recieve_request(int socket, ssize_t len) {
     string s(len, '\0');
 
     ssize_t bytes {};
@@ -174,23 +174,78 @@ void read_file_from_server(int socket, const Args& a) {
     throw runtime_error{"Server sent invalid response: " + response};
 }
 
+class Socket {
+public:
+    Socket(int s) : socket{s} { if (socket <= 0) throw runtime_error{"Invalid socket!"}; }
+    ~Socket() { close(socket); }
+
+    operator int() { return socket; }
+private:
+    int socket;
+};
+
+pair<Flags, string> get_request_type_and_file(const string& s) {
+    auto pos = s.find("READ ");
+    if (pos != string::npos) {
+        // discard newline and carriage return
+        string file {pos.substr(pos+sizeof("READ "), s.length()-2)};
+        return {Flags::read, file};
+    }
+    auto pos = s.find("WRITE ");
+    if (pos != string::npos) {
+        // discard newline and carriage return
+        string file {pos.substr(pos+sizeof("WRITE "), s.length()-2)};
+        return {Flags::write, file};
+    }
+    return {Flags::none, {}};
+}
+
 int main(int argc, char* argv[]) 
 try {
     Args a {args(argc, argv)};
     check_arguments(a);
 
-    int server {create_socket()};
+    Socket server {create_socket()};
 
-    hostent* host {gethostbyname(a.host.c_str())};
-    if (!host) throw runtime_error{"Host with name " + a.host + " not found!"};
-    
-    sockaddr_in server {};
-    server.sin_family = AF_INET;
-    copy_n((char*)host->h_addr, host->h_length, (char*)&server.sin_addr.s_addr);
+    sockaddr_in sa {};
+    sa.sin_family = AF_INET;
+    sa.sin_addr = INADDR_ANY;
+    sa.sin_port = htons(to<uint16_t>(a.port));
 
-    server.sin_port = htons(to<uint16_t>(a.port));
+    int rc {};
+    if ((rc = bind(server, (sockaddr*)&sa, sizeof(sa))) < 0) {
+        throw runtime_error{"Bind failed"};
+    }
 
-    if (connect(client, (sockaddr*)&server, sizeof(server))) throw runtime_error{"Connection to host failed!"};
+    if (listen(server, 1) < 0) {
+        throw runtime_error{"Listen failed"};
+    }
+
+    const string begin_file_transfer {"100 Begin file transfer\r\n"};
+    const string cannot_open_file {"101 Cannot open file\r\n"};
+    const string file_transfer_completed {"97 File transfer completed\r\n"};
+
+    for (;;) {
+        sockaddr_in client {};
+        socklen_t client_len {sizeof(client)};
+
+        try {
+            Socket client_socket {accept(server, (sockaddr*)&client, &client_len)};
+
+            string request {recieve_request(client_socket, 1000)};
+
+            string file;
+            Flags flags;
+            tie(flags, file) = get_request_type_and_file(request);
+            switch (flags) {
+                case Flags::read: // prepare to send binary stream
+                case Flags::write: // prepare to accept binary stream
+                default: throw runtime_error{"Invalid request type, not read nor write"};
+            }
+        } catch (const runtime_error& e) {
+            cerr << "Cannot open communication with client: " << e.what() << '\n';;
+        }
+    }
 
     string command {make_command(a.flags, a.file)};
 

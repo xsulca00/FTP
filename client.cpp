@@ -89,11 +89,8 @@ string make_command(Flags f, const string& file) {
     return command += ' ' + file + "\r\n";
 }
 
-
 int create_socket() {
-    int client {socket(AF_INET, SOCK_STREAM, 0)};
-    if (client <= 0) throw runtime_error{"Cannot create socket!"};
-    return client;
+    return socket(AF_INET, SOCK_STREAM, 0);
 }
 
 void send_request(int socket, const string& command) {
@@ -186,12 +183,22 @@ void read_file_from_server(int socket, const Args& a) {
     throw runtime_error{"Server sent invalid response: " + response};
 }
 
+class Socket {
+public:
+    Socket(int s) : socket{s} { if (socket <= 0) throw runtime_error{"Invalid socket!"}; }
+    ~Socket() { close(socket); }
+
+    operator int() { return socket; }
+private:
+    int socket;
+};
+
 int main(int argc, char* argv[]) 
 try {
     Args a {args(argc, argv)};
     check_arguments(a);
 
-    int client {create_socket()};
+    Socket client {create_socket()};
 
     hostent* host {gethostbyname(a.host.c_str())};
     if (!host) throw runtime_error{"Host with name " + a.host + " not found!"};
