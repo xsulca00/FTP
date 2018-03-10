@@ -2,6 +2,7 @@ extern "C" {
 #include <unistd.h>
 #include <netdb.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
 }
 #include <cstring>
 #include <fstream>
@@ -11,6 +12,7 @@ extern "C" {
 #include <string>
 #include <sstream>
 #include <vector>
+#include <tuple>
 
 using namespace std;
 
@@ -90,15 +92,25 @@ void send_request(int socket, const string& command) {
 }
 
 string recieve_request(int socket, ssize_t len) {
+    cout << "Recieving request\n";
     string s(len, '\0');
 
     ssize_t bytes {};
     char* b {&s[0]};
+    cout << "Before loop\n";
     for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
         bytes = recv(socket, b, remainder, 0);
+        if (!bytes) {
+            cout << "Client performed proper shutdown of socket\n"; 
+            break;
+        }
+        cout << "remainder: " << remainder << " bytes: " << bytes << '\n';
         if (bytes < 0) perror("recv");
         b += bytes;
+
+        if (s.find("READ ") != string::npos || s.find("WRITE ") != string::npos) break;
     }
+    cout << "After loop\n";
 
     return s;
 }
@@ -147,6 +159,7 @@ void write_data_to_file(const string& name, const vector<Chunk>& data) {
     for (const Chunk& c : data) file.write(c.data.data(), c.size);
 }
 
+/*
 void read_file_from_server(int socket, const Args& a) {
     const string begin_file_transfer {"100 Begin file transfer\r\n"};
     const string cannot_open_file {"101 Cannot open file\r\n"};
@@ -173,6 +186,7 @@ void read_file_from_server(int socket, const Args& a) {
 
     throw runtime_error{"Server sent invalid response: " + response};
 }
+*/
 
 class Socket {
 public:
@@ -188,13 +202,13 @@ pair<Flags, string> get_request_type_and_file(const string& s) {
     auto pos = s.find("READ ");
     if (pos != string::npos) {
         // discard newline and carriage return
-        string file {pos.substr(pos+sizeof("READ "), s.length()-2)};
+        string file {s.substr(pos+sizeof("READ ")-1, s.length()-2)};
         return {Flags::read, file};
     }
-    auto pos = s.find("WRITE ");
+    pos = s.find("WRITE ");
     if (pos != string::npos) {
         // discard newline and carriage return
-        string file {pos.substr(pos+sizeof("WRITE "), s.length()-2)};
+        string file {s.substr(pos+sizeof("WRITE ")-1, s.length()-2)};
         return {Flags::write, file};
     }
     return {Flags::none, {}};
@@ -209,7 +223,7 @@ try {
 
     sockaddr_in sa {};
     sa.sin_family = AF_INET;
-    sa.sin_addr = INADDR_ANY;
+    sa.sin_addr.s_addr = INADDR_ANY;
     sa.sin_port = htons(to<uint16_t>(a.port));
 
     int rc {};
@@ -230,16 +244,17 @@ try {
         socklen_t client_len {sizeof(client)};
 
         try {
+            cout << "Waiting for client...\n";
             Socket client_socket {accept(server, (sockaddr*)&client, &client_len)};
+            cout << "Client accepted\n";
 
-            string request {recieve_request(client_socket, 1000)};
-
+            string request {recieve_request(client_socket, 100)};
             string file;
             Flags flags;
             tie(flags, file) = get_request_type_and_file(request);
             switch (flags) {
-                case Flags::read: // prepare to send binary stream
-                case Flags::write: // prepare to accept binary stream
+                case Flags::read: cout << "READ " << file << '\n'; break; // prepare to send binary stream
+                case Flags::write: cout << "WRITE " << file << '\n'; break; // prepare to accept binary stream
                 default: throw runtime_error{"Invalid request type, not read nor write"};
             }
         } catch (const runtime_error& e) {
@@ -247,15 +262,8 @@ try {
         }
     }
 
-    string command {make_command(a.flags, a.file)};
+    //string command {make_command(a.flags, a.file)};
 
-    cout << "Sending command: " << command; 
-
-    // choose action
-    if (a.flags == Flags::write) {
-    } else if (a.flags == Flags::read) {
-        read_file_from_server(client, a);
-    } 
 } catch (const exception& e) {
     string s {e.what()};
     auto pos = s.find_last_of('\r');
