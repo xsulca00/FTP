@@ -91,8 +91,8 @@ void send_response(int socket, const string& command) {
     if (bytes < 0) throw system_error{errno, generic_category()};
 }
 
-void send_bytes(int socket, const Chunk& c) {
-    ssize_t bytes {send(socket, c.data.data(), c.size, 0)};
+void send_bytes(int socket, const char* data, ssize_t len) {
+    ssize_t bytes {send(socket, data, len, 0)};
     if (bytes < 0) throw system_error{errno, generic_category()};
 }
 
@@ -161,6 +161,11 @@ string get_file_name(int socket, const string& s) {
     return {};
 }
 
+template<typename T>
+char* as_bytes(T* t) {
+    return reinterpret_cast<char*>(t);
+}
+
 void fill_in_buffer(int socket, Buffer& b) {
     ssize_t bytes {};
     for (ssize_t remainder {b.size()}; remainder > 0; remainder -= bytes) {
@@ -189,21 +194,33 @@ void fill_in_buffer(int socket, Buffer& b) {
             */
             if (!fname.empty()) {
                 const string begin_file_transfer {"100 Begin file transfer\r\n"};
-                const string cannot_open_file {"101 Cannot open file\r\n"};
+                const string cannot_open_file {"101 Can not open a file\r\n"};
                 const string file_transfer_completed {"97 File transfer completed\r\n"};
-                cout << "READ \"" << fname << "\"\n";
+                cout << "READ accepted\n";
                 // send prepare to recieve data
+                cout << "Opening file " << fname << '\n';
+
                 ifstream file {fname, ios_base::binary};
                 if (!file) {
+                    cerr << "Cannot open file \"" << fname << "\": " << error_code{errno, generic_category()}.message() << '\n';
                     send_response(socket, cannot_open_file);
-                    throw runtime_error{"Cannot open requested file: " + fname + '\n'};
+                } else {
+                    send_response(socket, begin_file_transfer);
+                    cout << "Sending bytes\n";
+                    for (Chunk c; file;) {
+                        file.read(c.data.data(), c.data.size());
+                        Header h;
+                        h.length = file.gcount();
+                        if (file.eof()) h.last = true;
+                        cout << "h.length = " << h.length << " h.last = " << h.last << '\n';
+                        cout << "Data: " << c.data.data() << '\n';
+                        send_bytes(socket, as_bytes(&h), sizeof(h));
+                        send_bytes(socket, c.data.data(), c.size = h.length);
+                    }
+                    send_response(socket, file_transfer_completed);
+                    cout << "Sending finished\n";
                 }
-
-                for (Chunk c; file;) {
-                    file.read(c.data.data(), c.data.size());
-                    c.size = file.gcount();
-                    send_bytes(socket, c);
-                }
+                return;
             }
         }
     }

@@ -122,16 +122,24 @@ Header get_header(int socket) {
     Header h;
     for (ssize_t remainder {sizeof(h)}; remainder > 0; remainder -= bytes) {
         bytes = recv(socket, &h, remainder, 0);
+        cout << "get_header: sizeof(header): " << sizeof(h) << '\n';
+        cout << "get_header: bytes: " << bytes << '\n';
         if (bytes < 0) throw system_error{errno, generic_category()};
     }
     return h;
 }
 
-void get_chunk(int socket, Buffer& b, ssize_t len) {
+void get_chunk(int socket, Buffer& b, ssize_t len, bool last) {
     ssize_t bytes {};
+    cout << "get_chunk(): len: " << len << '\n';
     for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
+        cout << "get_chunk(): before recv\n";
         bytes = recv(socket, b.data(), remainder, 0);
+        cout << "get_chunk(): after recv\n";
+        cout << "get_chunk(): bytes: " << bytes << '\n';
         if (bytes < 0) throw system_error{errno, generic_category()};
+        cout << "Data: " << string{b.begin(), b.begin() + bytes} << '\n';
+        if (last) return;
     }
 }
 
@@ -139,14 +147,20 @@ vector<Chunk> recieve_file(int socket) {
     vector<Chunk> chunks;
     Header h;
     Chunk c;
+    cout << "Recieving file\n";
     while (!h.last) {
+        cout << "Getting header\n";
         h = get_header(socket);
         if (h.length <= 0) throw runtime_error{"Header length=(" + to_string(h.length) + ") <= 0"};
 
+        cout << "h.length = " << h.length << " h.last = " << h.last << '\n';
+
         chunks.push_back(Chunk{});
-        get_chunk(socket, chunks.back().data, h.length);
+        cout << "Getting chunk\n";
+        get_chunk(socket, chunks.back().data, h.length, h.last);
         chunks.back().size = h.length;
     }
+    cout << "Chunks return\n";
     return chunks;
 }
 
@@ -158,12 +172,16 @@ void write_data_to_file(const string& name, const vector<Chunk>& data) {
 
 void read_file_from_server(int socket, const Args& a) {
     const string begin_file_transfer {"100 Begin file transfer\r\n"};
-    const string cannot_open_file {"101 Cannot open file\r\n"};
+    const string cannot_open_file {"101 Can not open a file\r\n"};
 
-    send_request(socket, make_command(Flags::read, a.file));
+    string command {make_command(Flags::read, a.file)};
+    cout << "Sending command: " << command;
+    send_request(socket, command);
     string response {recieve_response(socket, begin_file_transfer.length())};
 
-    if (response == begin_file_transfer)  {
+    cout << "Response: " << response << '\n';
+    if (response == begin_file_transfer) {
+        cout << "Begin file transfer\n";
         vector<Chunk> file_data {recieve_file(socket)};
         write_data_to_file(a.file, file_data);
 
@@ -176,9 +194,9 @@ void read_file_from_server(int socket, const Args& a) {
     }
 
     if (response == cannot_open_file) {
-        cout << "File \"" << a.file << "\" cannot be transmitted\n";
+        cerr << "File cannot be opened\n";
         return;
-    } 
+    }
 
     throw runtime_error{"Server sent invalid response: " + response};
 }
@@ -210,10 +228,6 @@ try {
     server.sin_port = htons(to<uint16_t>(a.port));
 
     if (connect(client, (sockaddr*)&server, sizeof(server))) throw runtime_error{"Connection to host failed!"};
-
-    string command {make_command(a.flags, a.file)};
-
-    cout << "Sending command: " << command; 
 
     // choose action
     if (a.flags == Flags::write) {
