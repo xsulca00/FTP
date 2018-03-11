@@ -100,7 +100,6 @@ void send_bytes(int socket, const char* data, ssize_t len) {
     if (bytes < 0) throw system_error{errno, generic_category()};
 }
 
-
 string recieve_request(int socket, ssize_t len) {
     cout << "Recieving request\n";
     string s(len, '\0');
@@ -215,6 +214,8 @@ void fill_in_buffer(int socket, Buffer& b) {
             // get file name, if not in buffer, recieve more bytes
             string fname {get_file_name(socket, file_name)};
 
+            cout << "Name: " << fname.back() << '\n';
+
             /*
             string data {file_name.begin() + fname.size(), file_name.end()};
             cout << "Data: " << data << '\n';
@@ -222,7 +223,7 @@ void fill_in_buffer(int socket, Buffer& b) {
             if (!fname.empty()) {
                 if (f == Flags::read) {
                     cout << "READ accepted\n";
-                    read_and_send_file(socket, file_name);
+                    read_and_send_file(socket, fname);
                     return;
                 } else if (f == Flags::write) {
                 }
