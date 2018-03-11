@@ -13,6 +13,7 @@ extern "C" {
 #include <sstream>
 #include <vector>
 #include <tuple>
+#include <map>
 
 using namespace std;
 
@@ -21,6 +22,12 @@ enum class Flags { none, read, write };
 struct Args {
     string port {};
 }; 
+
+map<int, string> status_messages {
+    {100, "100 Begin file transfer\r\n"},
+    {101, "101 Can not open a file\r\n"},
+    {102, "102 File transfer completed\r\n"}
+};
 
 void check_negative(const string& s) {
     if (!s.empty() && s.front() == '-') throw runtime_error{"Port number is negative!"};
@@ -119,8 +126,8 @@ string recieve_request(int socket, ssize_t len) {
 }
 
 struct Header {
-    int length {};
-    bool last {};
+    int length;
+    bool last;
 };
 
 Header get_header(int socket) {
@@ -159,8 +166,31 @@ string get_file_name(int socket, const string& s) {
 }
 
 template<typename T>
-char* as_bytes(T* t) {
-    return reinterpret_cast<char*>(t);
+char* as_bytes(T& t) {
+    return reinterpret_cast<char*>(&t);
+}
+
+void read_and_send_file(int socket, const string& fname) {
+    cout << "Opening file " << fname << '\n';
+    ifstream file {fname, ios_base::binary};
+    if (!file) {
+        cerr << "Cannot open file \"" << fname << "\": " << error_code{errno, generic_category()}.message() << '\n';
+        send_response(socket, status_messages[101]);
+        return;
+    } 
+
+    send_response(socket, status_messages[100]);
+    cout << "Sending bytes\n";
+    for (Buffer b; file;) {
+        file.read(b.data(), b.size());
+        Header h {static_cast<int>(file.gcount()), file.eof()};
+        cout << "h.length = " << h.length << " h.last = " << h.last << '\n';
+        cout << "Data: " << b.data() << '\n';
+        send_bytes(socket, as_bytes(h), sizeof(h));
+        send_bytes(socket, b.data(), h.length);
+    }
+    send_response(socket, status_messages[102]);
+    cout << "Sending finished\n";
 }
 
 void fill_in_buffer(int socket, Buffer& b) {
@@ -190,34 +220,12 @@ void fill_in_buffer(int socket, Buffer& b) {
             cout << "Data: " << data << '\n';
             */
             if (!fname.empty()) {
-                const string begin_file_transfer {"100 Begin file transfer\r\n"};
-                const string cannot_open_file {"101 Can not open a file\r\n"};
-                const string file_transfer_completed {"102 File transfer completed\r\n"};
-                cout << "READ accepted\n";
-                // send prepare to recieve data
-                cout << "Opening file " << fname << '\n';
-
-                ifstream file {fname, ios_base::binary};
-                if (!file) {
-                    cerr << "Cannot open file \"" << fname << "\": " << error_code{errno, generic_category()}.message() << '\n';
-                    send_response(socket, cannot_open_file);
-                } else {
-                    send_response(socket, begin_file_transfer);
-                    cout << "Sending bytes\n";
-                    for (Chunk c; file;) {
-                        file.read(c.data.data(), c.data.size());
-                        Header h;
-                        h.length = file.gcount();
-                        if (file.eof()) h.last = true;
-                        cout << "h.length = " << h.length << " h.last = " << h.last << '\n';
-                        cout << "Data: " << c.data.data() << '\n';
-                        send_bytes(socket, as_bytes(&h), sizeof(h));
-                        send_bytes(socket, c.data.data(), c.size = h.length);
-                    }
-                    send_response(socket, file_transfer_completed);
-                    cout << "Sending finished\n";
+                if (f == Flags::read) {
+                    cout << "READ accepted\n";
+                    read_and_send_file(socket, file_name);
+                    return;
+                } else if (f == Flags::write) {
                 }
-                return;
             }
         }
     }
