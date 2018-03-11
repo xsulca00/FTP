@@ -86,10 +86,16 @@ int create_socket() {
     return socket;
 }
 
-void send_request(int socket, const string& command) {
+void send_response(int socket, const string& command) {
     ssize_t bytes {send(socket, command.c_str(), command.length(), 0)};
-    if (bytes < 0) perror("sendto");
+    if (bytes < 0) throw system_error{errno, generic_category()};
 }
+
+void send_bytes(int socket, const Chunk& c) {
+    ssize_t bytes {send(socket, c.data.data(), c.size, 0)};
+    if (bytes < 0) throw system_error{errno, generic_category()};
+}
+
 
 string recieve_request(int socket, ssize_t len) {
     cout << "Recieving request\n";
@@ -101,11 +107,11 @@ string recieve_request(int socket, ssize_t len) {
     for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
         bytes = recv(socket, b, remainder, 0);
         if (!bytes) {
-            cout << "Client performed proper shutdown of socket\n"; 
+            cout << "Client disconnected\n"; 
             break;
         }
         cout << "remainder: " << remainder << " bytes: " << bytes << '\n';
-        if (bytes < 0) perror("recv");
+        if (bytes < 0) throw system_error{errno, generic_category()};
         b += bytes;
 
         if (s.find("READ ") != string::npos || s.find("WRITE ") != string::npos) break;
@@ -125,18 +131,92 @@ Header get_header(int socket) {
     Header h;
     for (ssize_t remainder {sizeof(h)}; remainder > 0; remainder -= bytes) {
         bytes = recv(socket, &h, remainder, 0);
-        if (bytes < 0) perror("recv");
+        if (bytes < 0) throw system_error{errno, generic_category()};
     }
     return h;
+}
+
+Flags get_request_type(const string& s) {
+    auto pos = s.find("READ ");
+    if (pos != string::npos) {
+        // discard newline and carriage return
+        // string file {s.substr(pos+sizeof("READ ")-1, s.length()-2)};
+        return Flags::read;
+    }
+    pos = s.find("WRITE ");
+    if (pos != string::npos) {
+        // discard newline and carriage return
+        // string file {s.substr(pos+sizeof("WRITE ")-1, s.length()-2)};
+        return Flags::write;
+    }
+    return Flags::none;
+}
+
+string get_file_name(int socket, const string& s) {
+    auto found {s.find("\r\n")};
+    if (found != string::npos) {
+        // file name found
+        return {s.begin(), s.begin()+found};
+    }
+    return {};
+}
+
+void fill_in_buffer(int socket, Buffer& b) {
+    ssize_t bytes {};
+    for (ssize_t remainder {b.size()}; remainder > 0; remainder -= bytes) {
+        bytes = recv(socket, b.data(), remainder, 0);
+        if (bytes == 0) throw runtime_error{"Client disconnected"};
+        if (bytes < 0) throw system_error{errno, generic_category()};
+
+        {
+            // find if there is READ or WRITE operation
+            string buffer {b.begin(), b.begin() + bytes};
+            Flags f {get_request_type(buffer)};
+
+            string file_name;
+            switch (f) {
+                case Flags::read: file_name = buffer.substr(sizeof("READ ")-1); break;
+                case Flags::write: file_name = buffer.substr(sizeof("WRITE ")-1); break;
+                case Flags::none: throw runtime_error{"Expected READ or WRITE operation"};
+            }
+
+            // get file name, if not in buffer, recieve more bytes
+            string fname {get_file_name(socket, file_name)};
+
+            /*
+            string data {file_name.begin() + fname.size(), file_name.end()};
+            cout << "Data: " << data << '\n';
+            */
+            if (!fname.empty()) {
+                const string begin_file_transfer {"100 Begin file transfer\r\n"};
+                const string cannot_open_file {"101 Cannot open file\r\n"};
+                const string file_transfer_completed {"97 File transfer completed\r\n"};
+                cout << "READ \"" << fname << "\"\n";
+                // send prepare to recieve data
+                ifstream file {fname, ios_base::binary};
+                if (!file) {
+                    send_response(socket, cannot_open_file);
+                    throw runtime_error{"Cannot open requested file: " + fname + '\n'};
+                }
+
+                for (Chunk c; file;) {
+                    file.read(c.data.data(), c.data.size());
+                    c.size = file.gcount();
+                    send_bytes(socket, c);
+                }
+            }
+        }
+    }
 }
 
 void get_chunk(int socket, Buffer& b, ssize_t len) {
     ssize_t bytes {};
     for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
         bytes = recv(socket, b.data(), remainder, 0);
-        if (bytes < 0) perror("recv");
+        if (bytes < 0) throw system_error{errno, generic_category()};
     }
 }
+
 
 vector<Chunk> recieve_file(int socket) {
     vector<Chunk> chunks;
@@ -198,21 +278,6 @@ private:
     int socket;
 };
 
-pair<Flags, string> get_request_type_and_file(const string& s) {
-    auto pos = s.find("READ ");
-    if (pos != string::npos) {
-        // discard newline and carriage return
-        string file {s.substr(pos+sizeof("READ ")-1, s.length()-2)};
-        return {Flags::read, file};
-    }
-    pos = s.find("WRITE ");
-    if (pos != string::npos) {
-        // discard newline and carriage return
-        string file {s.substr(pos+sizeof("WRITE ")-1, s.length()-2)};
-        return {Flags::write, file};
-    }
-    return {Flags::none, {}};
-}
 
 int main(int argc, char* argv[]) 
 try {
@@ -244,11 +309,14 @@ try {
         socklen_t client_len {sizeof(client)};
 
         try {
-            cout << "Waiting for client...\n";
+            cout << "Waiting for client...\n"; 
             Socket client_socket {accept(server, (sockaddr*)&client, &client_len)};
             cout << "Client accepted\n";
 
-            string request {recieve_request(client_socket, 100)};
+            Buffer b;
+            fill_in_buffer(client_socket, b);
+
+            /*
             string file;
             Flags flags;
             tie(flags, file) = get_request_type_and_file(request);
@@ -257,13 +325,21 @@ try {
                 case Flags::write: cout << "WRITE " << file << '\n'; break; // prepare to accept binary stream
                 default: throw runtime_error{"Invalid request type, not read nor write"};
             }
+            */
         } catch (const runtime_error& e) {
             cerr << "Cannot open communication with client: " << e.what() << '\n';;
         }
     }
 
     //string command {make_command(a.flags, a.file)};
+} catch (const system_error& e) {
+    string s {e.what()};
+    auto pos = s.find_last_of('\r');
+    if (pos != string::npos) s.insert(pos, "\\r");
+    pos = s.find_last_of('\n');
+    if (pos != string::npos) s.insert(pos, "\\n");
 
+    cerr << "Exception has been thrown: " << s << '\n';
 } catch (const exception& e) {
     string s {e.what()};
     auto pos = s.find_last_of('\r');

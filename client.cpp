@@ -95,7 +95,7 @@ int create_socket() {
 
 void send_request(int socket, const string& command) {
     ssize_t bytes {send(socket, command.c_str(), command.length(), 0)};
-    if (bytes < 0) perror("sendto");
+    if (bytes < 0) throw system_error{errno, generic_category()};
 }
 
 string recieve_response(int socket, ssize_t len) {
@@ -105,7 +105,7 @@ string recieve_response(int socket, ssize_t len) {
     char* b {&s[0]};
     for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
         bytes = recv(socket, b, remainder, 0);
-        if (bytes < 0) perror("recv");
+        if (bytes < 0) throw system_error{errno, generic_category()};
         b += bytes;
     }
 
@@ -122,7 +122,7 @@ Header get_header(int socket) {
     Header h;
     for (ssize_t remainder {sizeof(h)}; remainder > 0; remainder -= bytes) {
         bytes = recv(socket, &h, remainder, 0);
-        if (bytes < 0) perror("recv");
+        if (bytes < 0) throw system_error{errno, generic_category()};
     }
     return h;
 }
@@ -131,7 +131,7 @@ void get_chunk(int socket, Buffer& b, ssize_t len) {
     ssize_t bytes {};
     for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
         bytes = recv(socket, b.data(), remainder, 0);
-        if (bytes < 0) perror("recv");
+        if (bytes < 0) throw system_error{errno, generic_category()};
     }
 }
 
