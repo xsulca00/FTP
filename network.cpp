@@ -86,23 +86,32 @@ namespace network {
         write_data_to_file(file_name, file_data);
     }
 
-    void send_request(int socket, const string& command) {
-        ssize_t bytes {send(socket, command.c_str(), command.length(), 0)};
-        if (bytes < 0) throw system_error{errno, generic_category()};
-    }
-
-    string recieve_response(int socket, ssize_t len) {
-        string s(len, '\0');
-
-        ssize_t bytes {};
-        char* b {&s[0]};
-        for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
-            bytes = recv(socket, b, remainder, 0);
+    namespace client {
+        void send_request(int socket, const string& command) {
+            ssize_t bytes {send(socket, command.c_str(), command.length(), 0)};
             if (bytes < 0) throw system_error{errno, generic_category()};
-            b += bytes;
         }
 
-        return s;
+        string recieve_response(int socket, ssize_t len) {
+            string s(len, '\0');
+
+            ssize_t bytes {};
+            char* b {&s[0]};
+            for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
+                bytes = recv(socket, b, remainder, 0);
+                if (bytes < 0) throw system_error{errno, generic_category()};
+                b += bytes;
+            }
+
+            return s;
+        }
+    }
+
+    namespace server {
+        void send_response(int socket, const string& command) {
+            ssize_t bytes {send(socket, command.c_str(), command.length(), 0)};
+            if (bytes < 0) throw system_error{errno, generic_category()};
+        }
     }
 
 }

@@ -1,0 +1,4 @@
+bytes == 0 u vsech recv osetrit
+Ctrl+C u serveru, podpora multrithreadingu
+dodela writing u klienta a serveru
+ma se vytvorit i slozka, pokud cesta neexistuje

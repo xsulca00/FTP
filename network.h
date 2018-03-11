@@ -16,6 +16,7 @@ namespace network {
 
     struct Header {
         Header() : length{}, last{} {}
+        Header(int llength, bool llast) : length{llength}, last{llast} {}
 
         int length;
         bool last;
@@ -41,8 +42,14 @@ namespace network {
     Header get_header(int socket);
     void get_chunk(int socket, Buffer& b, ssize_t len, bool last);
 
-    void send_request(int socket, const string& command);
-    string recieve_response(int socket, ssize_t len);
+    namespace client {
+        void send_request(int socket, const string& command);
+        string recieve_response(int socket, ssize_t len);
+    }
+
+    namespace server {
+        void send_response(int socket, const string& command);
+    }
 }
 
 #endif

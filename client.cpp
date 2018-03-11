@@ -18,6 +18,7 @@ extern "C" {
 
 using namespace std;
 using namespace network;
+using namespace network::client;
 using namespace utility;
 using namespace file;
 

@@ -20,6 +20,11 @@ namespace utility {
         return t;
     }
 
+    template<typename T>
+    char* as_bytes(T& t) {
+        return reinterpret_cast<char*>(&t);
+    }
+
     void remove_trailing_rn(string& s);
     void check_negative(const string& s);
 }
