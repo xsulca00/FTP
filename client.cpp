@@ -42,7 +42,54 @@ Args args(int argc, char* argv[]);
 void check_arguments(const Args& a);
 string make_command(Flags f, const string& file);
 void recieve_transfer_completed_message(int socket);
-void read_file_from_server(int socket, const string& file);
+void read_file_from_server(int socket, const string& fname);
+
+void open_and_send_file(int socket, const string& fname) {
+    cout << "Opening file " << fname << '\n';
+    ifstream file {fname, ios_base::binary};
+    if (!file) {
+        cerr << "Cannot open file \"" << fname << "\": " << error_code{errno, generic_category()}.message() << '\n';
+        send_response(socket, status_messages[101]);
+        return;
+    }
+
+    send_request(socket, status_messages[100]);
+    cout << "Sending bytes\n";
+    for (Buffer b; file;) {
+        file.read(b.data(), b.size());
+        Header h {static_cast<int>(file.gcount()), file.eof()};
+        cout << "h.length = " << h.length << " h.last = " << h.last << '\n';
+        cout << "Data: " << b.data() << '\n';
+        send_bytes(socket, as_bytes(h), sizeof(h));
+        send_bytes(socket, b.data(), h.length);
+    }
+    send_response(socket, status_messages[102]);
+    cout << "Sending finished\n";
+}
+
+
+void write_file_to_server(int socket, const string& fname) {
+    string command {make_command(Flags::write, fname)};
+    cout << "Sending command: " << command;
+    send_request(socket, command);
+    string response {recieve_response(socket, status_messages[100].length())};
+
+    cout << "Response: " << response << '\n';
+    if (response == status_messages[100]) {
+        cout << "Begin file transfer\n";
+        open_and_send_file(socket, fname);
+        recieve_transfer_completed_message(socket);
+        cout << "File transfer completed\n";
+        return;
+    }
+
+    if (response == status_messages[101]) {
+        cerr << "File cannot be opened\n";
+        return;
+    }
+
+    throw runtime_error{"Server sent invalid response: " + response};
+}
 
 int main(int argc, char* argv[]) 
 try {
@@ -53,8 +100,11 @@ try {
     connect_to_server(client, a.host, to<uint16_t>(a.port));
 
     // choose action
-    if (a.flags == Flags::write) {} //write_file_to_server(client, a);
-    else if (a.flags == Flags::read) read_file_from_server(client, a.file);
+    if (a.flags == Flags::write) { 
+        write_file_to_server(client, a.file); 
+    } else if (a.flags == Flags::read) {
+        read_file_from_server(client, a.file);
+    }
 } catch (const exception& e) {
     string s {e.what()};
     remove_trailing_rn(s);
@@ -107,8 +157,8 @@ void recieve_transfer_completed_message(int socket) {
     }
 }
 
-void read_file_from_server(int socket, const string& file) {
-    string command {make_command(Flags::read, file)};
+void read_file_from_server(int socket, const string& fname) {
+    string command {make_command(Flags::read, fname)};
     cout << "Sending command: " << command;
     send_request(socket, command);
     string response {recieve_response(socket, status_messages[100].length())};
@@ -116,6 +166,8 @@ void read_file_from_server(int socket, const string& file) {
     cout << "Response: " << response << '\n';
     if (response == status_messages[100]) {
         cout << "Begin file transfer\n";
+        ofstream file {fname, ios_base::binary};
+        if (!file) throw runtime_error{"Cannot open file \"" + fname + "\": " + error_code{errno, system_category()}.message()};
         recieve_and_write_file(socket, file);
         recieve_transfer_completed_message(socket);
         cout << "File transfer completed\n";

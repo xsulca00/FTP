@@ -122,7 +122,23 @@ string get_file_name(int socket, const string& s) {
     return {};
 }
 
-void read_and_send_file(int socket, const string& fname) {
+void open_and_recieve_file(int socket, const string& fname) {
+    cout << "Opening file " << fname << '\n';
+    ofstream file {fname, ios_base::binary};
+    if (!file) {
+        cerr << "Cannot open file \"" << fname << "\": " << error_code{errno, generic_category()}.message() << '\n';
+        send_response(socket, status_messages[101]);
+        return;
+    } 
+
+    send_response(socket, status_messages[100]);
+    cout << "Recieving bytes\n";
+    recieve_and_write_file(socket, file);
+    cout << "Recieving finished\n";
+    send_response(socket, status_messages[102]);
+}
+
+void open_and_send_file(int socket, const string& fname) {
     cout << "Opening file " << fname << '\n';
     ifstream file {fname, ios_base::binary};
     if (!file) {
@@ -176,9 +192,12 @@ void fill_in_buffer(int socket, Buffer& b) {
             if (!fname.empty()) {
                 if (f == Flags::read) {
                     cout << "READ accepted\n";
-                    read_and_send_file(socket, fname);
+                    open_and_send_file(socket, fname);
                     return;
                 } else if (f == Flags::write) {
+                    cout << "WRITE accepted\n";
+                    open_and_recieve_file(socket, fname);
+                    return;
                 }
             }
         }

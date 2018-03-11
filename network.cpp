@@ -10,6 +10,7 @@ extern "C" {
 #include <algorithm>
 #include <system_error>
 #include <iostream>
+#include <fstream>
 
 namespace network {
     hostent* get_host(const string& name) {
@@ -81,9 +82,9 @@ namespace network {
         return chunks;
     }
 
-    void recieve_and_write_file(int socket, const string& file_name) {
+    void recieve_and_write_file(int socket, ofstream& file) {
         vector<Chunk> file_data {recieve_file_data(socket)};
-        write_data_to_file(file_name, file_data);
+        write_data_to_file(file, file_data);
     }
 
     namespace client {

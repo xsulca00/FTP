@@ -37,7 +37,7 @@ namespace network {
     void connect_to_server(int socket, const string& host_name, uint16_t port);
     int create_socket();
 
-    void recieve_and_write_file(int socket, const string& file_name);
+    void recieve_and_write_file(int socket, ofstream& file);
     vector<Chunk> recieve_file_data(int socket);
     Header get_header(int socket);
     void get_chunk(int socket, Buffer& b, ssize_t len, bool last);

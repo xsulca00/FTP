@@ -18,7 +18,7 @@ namespace file {
         long size;
     };
 
-    void write_data_to_file(const string& name, const vector<Chunk>& data);
+    void write_data_to_file(ofstream& file, const vector<Chunk>& data);
 }
 
 #endif
