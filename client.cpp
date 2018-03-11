@@ -11,6 +11,7 @@ extern "C" {
 #include <string>
 #include <sstream>
 #include <vector>
+#include <map>
 
 using namespace std;
 
@@ -23,13 +24,37 @@ struct Args {
     string file;
 }; 
 
-void check_negative(const string& s) {
-    if (!s.empty() && s.front() == '-') throw runtime_error{"Port number is negative!"};
-}
+using Buffer = array<char, 4096>;
 
-void check_flag(Flags f) {
-    if (f != Flags::none) throw runtime_error{"check_flag(): read or write is already set!"};
-}
+struct Chunk {
+    Buffer data;
+    long size {};
+};
+
+struct Header {
+    int length {};
+    bool last {};
+};
+
+class Socket {
+public:
+    Socket(int s) : socket{s} { if (socket <= 0) throw runtime_error{"Invalid socket!"}; }
+    ~Socket() { close(socket); }
+
+    operator int() { return socket; }
+private:
+    int socket;
+};
+
+
+map<int, string> status_messages {
+    {100, "100 Begin file transfer\r\n"},
+    {101, "101 Can not open a file\r\n"},
+    {102, "102 File transfer completed\r\n"}
+};
+
+void check_negative(const string& s) { if (!s.empty() && s.front() == '-') throw runtime_error{"Port number is negative!"}; }
+void check_flag(Flags f) { if (f != Flags::none) throw runtime_error{"check_flag(): read or write is already set!"}; }
 
 Args args(int argc, char* argv[]) {
     Args a;
@@ -40,10 +65,7 @@ Args args(int argc, char* argv[]) {
             case 'p': a.port = optarg; check_negative(a.port); break;
             case 'r': check_flag(a.flags); a.flags = Flags::read; break;
             case 'w': check_flag(a.flags); a.flags = Flags::write; break;
-            case '?': 
-            {
-                throw runtime_error{""};
-            }
+            case '?': throw runtime_error{""};
         }
     }
 
@@ -65,12 +87,6 @@ Target to(Source arg)
     return t;
 }
 
-using Buffer = array<char, 4096>;
-
-struct Chunk {
-    Buffer data;
-    long size {};
-};
 
 void check_arguments(const Args& a) {
     if (a.host.empty()) throw runtime_error{"main(): host not set!"};
@@ -89,9 +105,7 @@ string make_command(Flags f, const string& file) {
     return command += ' ' + file + "\r\n";
 }
 
-int create_socket() {
-    return socket(AF_INET, SOCK_STREAM, 0);
-}
+int create_socket() { return socket(AF_INET, SOCK_STREAM, 0); }
 
 void send_request(int socket, const string& command) {
     ssize_t bytes {send(socket, command.c_str(), command.length(), 0)};
@@ -111,11 +125,6 @@ string recieve_response(int socket, ssize_t len) {
 
     return s;
 }
-
-struct Header {
-    int length {};
-    bool last {};
-};
 
 Header get_header(int socket) {
     ssize_t bytes {};
@@ -171,29 +180,26 @@ void write_data_to_file(const string& name, const vector<Chunk>& data) {
 }
 
 void read_file_from_server(int socket, const Args& a) {
-    const string begin_file_transfer {"100 Begin file transfer\r\n"};
-    const string cannot_open_file {"101 Can not open a file\r\n"};
-
     string command {make_command(Flags::read, a.file)};
     cout << "Sending command: " << command;
     send_request(socket, command);
-    string response {recieve_response(socket, begin_file_transfer.length())};
+    string response {recieve_response(socket, status_messages[100].length())};
 
     cout << "Response: " << response << '\n';
-    if (response == begin_file_transfer) {
+    if (response == status_messages[100]) {
         cout << "Begin file transfer\n";
         vector<Chunk> file_data {recieve_file(socket)};
         write_data_to_file(a.file, file_data);
 
-        const string file_transfer_completed {"97 File transfer completed\r\n"};
-        string response1 {recieve_response(socket, file_transfer_completed.length())};
-        if (response1 != file_transfer_completed) {
+        string response1 {recieve_response(socket, status_messages[102].length())};
+        if (response1 != status_messages[102]) {
             throw runtime_error{"Server did not confirmed that file transfer is completed, this message was sent instead: " + response1}; 
         }
+        cout << "File transfer completed\n";
         return;
     }
 
-    if (response == cannot_open_file) {
+    if (response == status_messages[101]) {
         cerr << "File cannot be opened\n";
         return;
     }
@@ -201,15 +207,19 @@ void read_file_from_server(int socket, const Args& a) {
     throw runtime_error{"Server sent invalid response: " + response};
 }
 
-class Socket {
-public:
-    Socket(int s) : socket{s} { if (socket <= 0) throw runtime_error{"Invalid socket!"}; }
-    ~Socket() { close(socket); }
+hostent* get_host(const string& name) {
+    hostent* host {gethostbyname(name.c_str())};
+    if (!host) throw runtime_error{"Host with name " + name + " not found!"};
+    return host;
+}
 
-    operator int() { return socket; }
-private:
-    int socket;
-};
+sockaddr_in server_address(const hostent* host, uint16_t port) {
+    sockaddr_in server {};
+    server.sin_family = AF_INET;
+    server.sin_port = htons(port);
+    copy_n((char*)host->h_addr, host->h_length, (char*)&server.sin_addr.s_addr);
+    return server;
+}
 
 int main(int argc, char* argv[]) 
 try {
@@ -217,29 +227,20 @@ try {
     check_arguments(a);
 
     Socket client {create_socket()};
+    hostent* host {get_host(a.host)};
+    sockaddr_in server {server_address(host, to<uint16_t>(a.port))};
 
-    hostent* host {gethostbyname(a.host.c_str())};
-    if (!host) throw runtime_error{"Host with name " + a.host + " not found!"};
-    
-    sockaddr_in server {};
-    server.sin_family = AF_INET;
-    copy_n((char*)host->h_addr, host->h_length, (char*)&server.sin_addr.s_addr);
-
-    server.sin_port = htons(to<uint16_t>(a.port));
-
-    if (connect(client, (sockaddr*)&server, sizeof(server))) throw runtime_error{"Connection to host failed!"};
+    if (connect(client, (sockaddr*)&server, sizeof(server))) throw system_error{errno, generic_category()};
 
     // choose action
-    if (a.flags == Flags::write) {
-    } else if (a.flags == Flags::read) {
-        read_file_from_server(client, a);
-    } 
+    if (a.flags == Flags::write) {} //write_file_to_server(client, a);
+    else if (a.flags == Flags::read) read_file_from_server(client, a);
 } catch (const exception& e) {
     string s {e.what()};
     auto pos = s.find_last_of('\r');
-    if (pos != string::npos) s.insert(pos, "\\r");
+    if (pos != string::npos) s.erase(pos, pos+1);
     pos = s.find_last_of('\n');
-    if (pos != string::npos) s.insert(pos, "\\n");
+    if (pos != string::npos) s.erase(pos, pos+1);
 
     cerr << "Exception has been thrown: " << s << '\n';
     return 1;

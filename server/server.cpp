@@ -195,7 +195,7 @@ void fill_in_buffer(int socket, Buffer& b) {
             if (!fname.empty()) {
                 const string begin_file_transfer {"100 Begin file transfer\r\n"};
                 const string cannot_open_file {"101 Can not open a file\r\n"};
-                const string file_transfer_completed {"97 File transfer completed\r\n"};
+                const string file_transfer_completed {"102 File transfer completed\r\n"};
                 cout << "READ accepted\n";
                 // send prepare to recieve data
                 cout << "Opening file " << fname << '\n';
