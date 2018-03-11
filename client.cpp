@@ -46,12 +46,18 @@ private:
     int socket;
 };
 
-
 map<int, string> status_messages {
     {100, "100 Begin file transfer\r\n"},
     {101, "101 Can not open a file\r\n"},
     {102, "102 File transfer completed\r\n"}
 };
+
+void remove_trailing_rn(string& s) {
+    auto pos = s.find_last_of('\r');
+    if (pos != string::npos) s.erase(pos, pos+1);
+    pos = s.find_last_of('\n');
+    if (pos != string::npos) s.erase(pos, pos+1);
+}
 
 void check_negative(const string& s) { if (!s.empty() && s.front() == '-') throw runtime_error{"Port number is negative!"}; }
 void check_flag(Flags f) { if (f != Flags::none) throw runtime_error{"check_flag(): read or write is already set!"}; }
@@ -152,7 +158,7 @@ void get_chunk(int socket, Buffer& b, ssize_t len, bool last) {
     }
 }
 
-vector<Chunk> recieve_file(int socket) {
+vector<Chunk> recieve_file_data(int socket) {
     vector<Chunk> chunks;
     Header h;
     Chunk c;
@@ -179,8 +185,20 @@ void write_data_to_file(const string& name, const vector<Chunk>& data) {
     for (const Chunk& c : data) file.write(c.data.data(), c.size);
 }
 
-void read_file_from_server(int socket, const Args& a) {
-    string command {make_command(Flags::read, a.file)};
+void recieve_transfer_completed_message(int socket) {
+    string response1 {recieve_response(socket, status_messages[102].length())};
+    if (response1 != status_messages[102]) {
+        throw runtime_error{"Server did not confirmed that file transfer is completed, this message was sent instead: " + response1}; 
+    }
+}
+
+void recieve_and_write_file(int socket, const string& file_name) {
+    vector<Chunk> file_data {recieve_file_data(socket)};
+    write_data_to_file(file_name, file_data);
+}
+
+void read_file_from_server(int socket, const string& file) {
+    string command {make_command(Flags::read, file)};
     cout << "Sending command: " << command;
     send_request(socket, command);
     string response {recieve_response(socket, status_messages[100].length())};
@@ -188,13 +206,8 @@ void read_file_from_server(int socket, const Args& a) {
     cout << "Response: " << response << '\n';
     if (response == status_messages[100]) {
         cout << "Begin file transfer\n";
-        vector<Chunk> file_data {recieve_file(socket)};
-        write_data_to_file(a.file, file_data);
-
-        string response1 {recieve_response(socket, status_messages[102].length())};
-        if (response1 != status_messages[102]) {
-            throw runtime_error{"Server did not confirmed that file transfer is completed, this message was sent instead: " + response1}; 
-        }
+        recieve_and_write_file(socket, file);
+        recieve_transfer_completed_message(socket);
         cout << "File transfer completed\n";
         return;
     }
@@ -221,27 +234,26 @@ sockaddr_in server_address(const hostent* host, uint16_t port) {
     return server;
 }
 
+void connect_to_server(int socket, const string& host_name, uint16_t port) {
+    hostent* host {get_host(host_name)};
+    sockaddr_in server {server_address(host, port)};
+    if (connect(socket, (sockaddr*)&server, sizeof(server))) throw system_error{errno, generic_category()};
+}
+
 int main(int argc, char* argv[]) 
 try {
     Args a {args(argc, argv)};
     check_arguments(a);
 
     Socket client {create_socket()};
-    hostent* host {get_host(a.host)};
-    sockaddr_in server {server_address(host, to<uint16_t>(a.port))};
-
-    if (connect(client, (sockaddr*)&server, sizeof(server))) throw system_error{errno, generic_category()};
+    connect_to_server(client, a.host, to<uint16_t>(a.port));
 
     // choose action
     if (a.flags == Flags::write) {} //write_file_to_server(client, a);
-    else if (a.flags == Flags::read) read_file_from_server(client, a);
+    else if (a.flags == Flags::read) read_file_from_server(client, a.file);
 } catch (const exception& e) {
     string s {e.what()};
-    auto pos = s.find_last_of('\r');
-    if (pos != string::npos) s.erase(pos, pos+1);
-    pos = s.find_last_of('\n');
-    if (pos != string::npos) s.erase(pos, pos+1);
-
+    remove_trailing_rn(s);
     cerr << "Exception has been thrown: " << s << '\n';
     return 1;
 }

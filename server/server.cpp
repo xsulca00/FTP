@@ -36,10 +36,7 @@ Args args(int argc, char* argv[]) {
     for(int c {}; (c = getopt(argc, argv, "p:")) != -1;) {
         switch (c) {
             case 'p': a.port = optarg; check_negative(a.port); break;
-            case '?': 
-            {
-                throw runtime_error{""};
-            }
+            case '?': throw runtime_error{""};
         }
     }
 
