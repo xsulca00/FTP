@@ -103,6 +103,12 @@ void open_and_recieve_file(int socket, const string& fname) {
         return;
     }
 
+    if (is_dir(fname) || is_symlink(fname)) {
+        cerr << "Not a file, directory or symlink\n";
+        send_response(socket, status_messages[101]);
+        return;
+    }
+
     auto p = get_path_and_file(fname);
 
     if (!file_exists(fname)) {
@@ -133,12 +139,31 @@ void open_and_recieve_file(int socket, const string& fname) {
 }
 
 void open_and_send_file(int socket, const string& fname) {
-    cout << "Opening file " << fname << '\n';
-
+    cout << "Checking file path\n";
     if (!fname.empty() && fname.front() == '/') {
         cerr << "Cannot access root directory: " << fname << '\n';
         send_response(socket, status_messages[101]);
         return;
+    }
+
+    if (is_dir(fname) || is_symlink(fname)) {
+        cerr << "Not a file, directory or symlink\n";
+        send_response(socket, status_messages[101]);
+        return;
+    }
+
+    auto p = get_path_and_file(fname);
+
+    if (!file_exists(fname)) {
+        string path;
+        for (const string& dir : p.first) {
+            path += dir + '/';
+            if (!file_exists(path) && mkdir(path.c_str(), 0777) < 0) {
+                perror("mkdir");
+                send_response(socket, status_messages[101]);
+                return;
+            }
+        }
     }
 
     ifstream file {fname, ios_base::binary};
@@ -147,6 +172,7 @@ void open_and_send_file(int socket, const string& fname) {
         send_response(socket, status_messages[101]);
         return;
     } 
+    cout << "File path checked\n";
  
     send_response(socket, status_messages[100]);
     cout << "Sending bytes\n";

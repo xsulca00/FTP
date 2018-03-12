@@ -159,39 +159,46 @@ void read_file_from_server(int socket, const string& fname) {
     string command {make_command(Flags::read, fname)};
     cout << "Sending command: " << command;
     send_request(socket, command);
-    string response {recieve_response(socket, status_messages[100].length())};
 
+    string response {recieve_response(socket, status_messages[100].length())};
     cout << "Response: " << response << '\n';
+
+    if (response == status_messages[101]) {
+        cerr << "File on server cannot be opened\n";
+        return;
+    }
+
     if (response == status_messages[100]) {
+        cout << "Checking file path\n";
+
         if (!fname.empty() && fname.front() == '/') {
             cerr << "Cannot access root directory: " << fname << '\n';
-            send_response(socket, status_messages[101]);
             return;
         }
 
         auto p = get_path_and_file(fname);
 
-        string path;
-        for (const string& dir : p.first) {
-            path += dir + '/';
-            if (mkdir(path.c_str(), 0777) < 0) {
-                perror("mkdir");
-                send_response(socket, status_messages[101]);
-                return;
+        if (!file_exists(fname)) {
+            string path;
+            for (const string& dir : p.first) {
+                path += dir + '/';
+                if (!file_exists(path) && mkdir(path.c_str(), 0777) < 0) {
+                    perror("mkdir");
+                    return;
+                }
             }
         }
 
-        cout << "Begin file transfer\n";
         ofstream file {fname, ios_base::binary};
-        if (!file) throw runtime_error{"Cannot open file \"" + fname + "\": " + error_code{errno, system_category()}.message()};
+        if (!file)  {
+            cerr << "Cannot open file \"" + fname + "\": " + error_code{errno, system_category()}.message();
+            return;
+        }
+            
+        cout << "Begin file transfer\n";
         recieve_and_write_file(socket, file);
         recieve_transfer_completed_message(socket);
         cout << "File transfer completed\n";
-        return;
-    }
-
-    if (response == status_messages[101]) {
-        cerr << "File cannot be opened\n";
         return;
     }
 

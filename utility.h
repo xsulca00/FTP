@@ -30,6 +30,8 @@ namespace utility {
     void check_negative(const string& s);
     pair<vector<string>, string> get_path_and_file(const string& path);
     bool file_exists(const string& s);
+    bool is_dir(const string& path);
+    bool is_symlink(const string& path);
 }
 
 

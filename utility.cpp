@@ -1,5 +1,6 @@
 extern "C" {
 #include <unistd.h>
+#include <sys/stat.h>
 }
 
 #include "utility.h"
@@ -37,5 +38,17 @@ namespace utility {
     }
 
     bool file_exists(const string& fname) { return access(fname.c_str(), F_OK | W_OK) != -1; }
+
+    bool is_dir(const string& path) {
+        struct stat st {};
+        if (stat(path.c_str(), &st) == -1) return false;
+        return S_ISDIR(st.st_mode);
+    }
+
+    bool is_symlink(const string& path) {
+        struct stat st {};
+        if (stat(path.c_str(), &st) == -1) return false;
+        return S_ISLNK(st.st_mode);
+    }
 
 }
