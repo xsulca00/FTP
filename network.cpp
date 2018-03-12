@@ -40,8 +40,7 @@ namespace network {
         Header h;
         for (ssize_t remainder {sizeof(h)}; remainder > 0; remainder -= bytes) {
             bytes = recv(socket, &h, remainder, 0);
-            cout << "get_header: sizeof(header): " << sizeof(h) << '\n';
-            cout << "get_header: bytes: " << bytes << '\n';
+            if (bytes == 0) throw system_error{errno, generic_category()};
             if (bytes < 0) throw system_error{errno, generic_category()};
         }
         return h;
@@ -55,6 +54,7 @@ namespace network {
             bytes = recv(socket, b.data(), remainder, 0);
             cout << "get_chunk(): after recv\n";
             cout << "get_chunk(): bytes: " << bytes << '\n';
+            if (bytes == 0) throw system_error{errno, generic_category()};
             if (bytes < 0) throw system_error{errno, generic_category()};
             cout << "Data: " << string{b.begin(), b.begin() + bytes} << '\n';
             if (last) return;
@@ -88,6 +88,7 @@ namespace network {
     }
 
     void send_bytes(int socket, const char* data, ssize_t len) {
+        if (len <= 0) return;
         ssize_t bytes {send(socket, data, len, 0)};
         if (bytes < 0) throw system_error{errno, generic_category()};
         if (bytes == 0) throw system_error{errno, generic_category()};
@@ -127,6 +128,7 @@ namespace network {
         char* b {&s[0]};
         for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
             bytes = recv(socket, b, remainder, 0);
+            if (bytes == 0) throw system_error{errno, generic_category()};
             if (bytes < 0) throw system_error{errno, generic_category()};
             b += bytes;
         }

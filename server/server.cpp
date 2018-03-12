@@ -109,7 +109,7 @@ void open_and_recieve_file(int socket, const string& fname) {
         string path;
         for (const string& dir : p.first) {
             path += dir + '/';
-            if (mkdir(path.c_str(), 0777) < 0) {
+            if (!file_exists(path) && mkdir(path.c_str(), 0777) < 0) {
                 perror("mkdir");
                 send_response(socket, status_messages[101]);
                 return;
