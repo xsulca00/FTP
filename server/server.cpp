@@ -97,6 +97,12 @@ string get_file_name(const string& s) {
 void open_and_recieve_file(int socket, const string& fname) {
     cout << "Opening file " << fname << '\n';
 
+    string response {recieve_response(socket, status_messages[101].length())};
+    if (response == status_messages[101]) {
+        cerr << "Client could not open the file to send\n";
+        return;
+    }
+
     if (!fname.empty() && fname.front() == '/') {
         cerr << "Cannot access root directory: " << fname << '\n';
         send_response(socket, status_messages[101]);
@@ -122,7 +128,6 @@ void open_and_recieve_file(int socket, const string& fname) {
         return;
     } 
 
-    send_response(socket, status_messages[100]);
     cout << "Recieving bytes\n";
     recieve_and_write_file(socket, file);
     cout << "Recieving finished\n";
@@ -131,6 +136,12 @@ void open_and_recieve_file(int socket, const string& fname) {
 
 void open_and_send_file(int socket, const string& fname) {
     cout << "Opening file " << fname << '\n';
+
+    if (!fname.empty() && fname.front() == '/') {
+        cerr << "Cannot access root directory: " << fname << '\n';
+        send_response(socket, status_messages[101]);
+        return;
+    }
 
     ifstream file {fname, ios_base::binary};
     if (!file) {
@@ -172,15 +183,8 @@ void fill_in_buffer(int socket, Buffer& b) {
                 case Flags::none: throw runtime_error{"Expected READ or WRITE operation"};
             }
 
-            // get file name, if not in buffer, recieve more bytes
             string fname {get_file_name(file_name)};
 
-            cout << "Name: " << fname.back() << '\n';
-
-            /*
-            string data {file_name.begin() + fname.size(), file_name.end()};
-            cout << "Data: " << data << '\n';
-            */
             if (!fname.empty()) {
                 if (f == Flags::read) {
                     cout << "READ accepted\n";
@@ -246,19 +250,12 @@ try {
     //string command {make_command(a.flags, a.file)};
 } catch (const system_error& e) {
     string s {e.what()};
-    auto pos = s.find_last_of('\r');
-    if (pos != string::npos) s.insert(pos, "\\r");
-    pos = s.find_last_of('\n');
-    if (pos != string::npos) s.insert(pos, "\\n");
-
+    remove_trailing_rn(s);
     cerr << "Exception has been thrown: " << s << '\n';
+    return 1;
 } catch (const exception& e) {
     string s {e.what()};
-    auto pos = s.find_last_of('\r');
-    if (pos != string::npos) s.insert(pos, "\\r");
-    pos = s.find_last_of('\n');
-    if (pos != string::npos) s.insert(pos, "\\n");
-
+    remove_trailing_rn(s);
     cerr << "Exception has been thrown: " << s << '\n';
     return 1;
 }

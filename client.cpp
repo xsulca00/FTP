@@ -2,6 +2,7 @@ extern "C" {
 #include <unistd.h>
 #include <netdb.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 }
 #include <cstring>
 #include <fstream>
@@ -43,15 +44,7 @@ string make_command(Flags f, const string& file);
 void recieve_transfer_completed_message(int socket);
 void read_file_from_server(int socket, const string& fname);
 
-void open_and_send_file(int socket, const string& fname) {
-    cout << "Opening file " << fname << '\n';
-    ifstream file {fname, ios_base::binary};
-    if (!file) {
-        cerr << "Cannot open file \"" << fname << "\": " << error_code{errno, generic_category()}.message() << '\n';
-        send_response(socket, status_messages[101]);
-        return;
-    }
-
+void send_file(int socket, ifstream& file) {
     cout << "Sending bytes\n";
     for (Buffer b; file;) {
         file.read(b.data(), b.size());
@@ -69,11 +62,19 @@ void write_file_to_server(int socket, const string& fname) {
     cout << "Sending command: " << command;
     send_request(socket, command);
 
+    cout << "Opening file " << fname << '\n';
+    ifstream file {fname, ios_base::binary};
+    if (!file) {
+        cerr << "Cannot open file \"" << fname << "\": " << error_code{errno, generic_category()}.message() << '\n';
+        send_response(socket, status_messages[101]);
+        return;
+    }
+
     string response {recieve_response(socket, status_messages[100].length())};
     cout << "Response: " << response << '\n';
     if (response == status_messages[100]) {
         cout << "Begin file transfer\n";
-        open_and_send_file(socket, fname);
+        send_file(socket, file);
         recieve_transfer_completed_message(socket);
         cout << "File transfer completed\n";
         return;
@@ -161,6 +162,24 @@ void read_file_from_server(int socket, const string& fname) {
 
     cout << "Response: " << response << '\n';
     if (response == status_messages[100]) {
+        if (!fname.empty() && fname.front() == '/') {
+            cerr << "Cannot access root directory: " << fname << '\n';
+            send_response(socket, status_messages[101]);
+            return;
+        }
+
+        auto p = get_path_and_file(fname);
+
+        string path;
+        for (const string& dir : p.first) {
+            path += dir + '/';
+            if (mkdir(path.c_str(), 0777) < 0) {
+                perror("mkdir");
+                send_response(socket, status_messages[101]);
+                return;
+            }
+        }
+
         cout << "Begin file transfer\n";
         ofstream file {fname, ios_base::binary};
         if (!file) throw runtime_error{"Cannot open file \"" + fname + "\": " + error_code{errno, system_category()}.message()};
