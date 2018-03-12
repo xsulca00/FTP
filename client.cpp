@@ -4,6 +4,7 @@ extern "C" {
 #include <sys/socket.h>
 #include <sys/stat.h>
 }
+
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -11,6 +12,8 @@ extern "C" {
 #include <algorithm>
 #include <string>
 #include <sstream>
+#include <stdexcept>
+#include <system_error>
 #include <vector>
 #include <map>
 #include "network.h"
@@ -50,7 +53,6 @@ void send_file(int socket, ifstream& file) {
         file.read(b.data(), b.size());
         Header h {static_cast<int>(file.gcount()), file.eof()};
         cout << "h.length = " << h.length << " h.last = " << h.last << '\n';
-        cout << "Data: " << b.data() << '\n';
         send_bytes(socket, as_bytes(h), sizeof(h));
         send_bytes(socket, b.data(), h.length);
     }

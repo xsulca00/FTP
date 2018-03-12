@@ -17,6 +17,7 @@ extern "C" {
 #include <vector>
 #include <tuple>
 #include <map>
+#include <system_error>
 #include "../utility.h"
 #include "../network.h"
 #include "../file.h"
@@ -86,7 +87,7 @@ Flags get_request_type(const string& s) {
 }
 
 string get_file_name(const string& s) {
-    auto found {s.find("\r\n")};
+    auto found = s.find("\r\n");
     if (found != string::npos) {
         // file name found
         return {s.begin(), s.begin()+found};
@@ -180,7 +181,6 @@ void open_and_send_file(int socket, const string& fname) {
         file.read(b.data(), b.size());
         Header h {static_cast<int>(file.gcount()), file.eof()};
         cout << "h.length = " << h.length << " h.last = " << h.last << '\n';
-        cout << "Data: " << b.data() << '\n';
         send_bytes(socket, as_bytes(h), sizeof(h));
         send_bytes(socket, b.data(), h.length);
     }
@@ -190,7 +190,7 @@ void open_and_send_file(int socket, const string& fname) {
 
 void fill_in_buffer(int socket, Buffer& b) {
     ssize_t bytes {};
-    for (ssize_t remainder {b.size()}; remainder > 0; remainder -= bytes) {
+    for (ssize_t remainder {static_cast<ssize_t>(b.size())}; remainder > 0; remainder -= bytes) {
         bytes = recv(socket, b.data(), remainder, 0);
         if (bytes == 0) throw runtime_error{"Client disconnected"};
         if (bytes < 0) throw system_error{errno, generic_category()};
@@ -227,7 +227,7 @@ void fill_in_buffer(int socket, Buffer& b) {
 int socket_to_close;
 
 void cleanup(int, siginfo_t*, void*) {
-    cerr << "SIGINT registerered!\n";
+    cerr << "SIGINT registerered, cleaning up and closing server\n";
     close(socket_to_close);
     exit(1);
 }
@@ -240,23 +240,23 @@ try {
     Socket server {create_socket()};
     socket_to_close = server;
 
-    sockaddr_in sa {};
+    sockaddr_in sa;
     sa.sin_family = AF_INET;
     sa.sin_addr.s_addr = INADDR_ANY;
     sa.sin_port = htons(to<uint16_t>(a.port));
 
     int rc {};
-    if ((rc = bind(server, (sockaddr*)&sa, sizeof(sa))) < 0) { throw runtime_error{"Bind failed"}; }
+    if ((rc = ::bind(server, (sockaddr*)&sa, sizeof(sa))) < 0) { throw runtime_error{"Bind failed"}; }
     if (listen(server, 1) < 0) { throw runtime_error{"Listen failed"}; }
 
-    struct sigaction act {};
+    struct sigaction act;
     act.sa_sigaction = &cleanup;
     act.sa_flags = SA_SIGINFO;
 
     if (sigaction(SIGINT, &act, nullptr) < 0) throw system_error{errno, generic_category()};
 
     for (;;) {
-        sockaddr_in client {};
+        sockaddr_in client;
         socklen_t client_len {sizeof(client)};
 
         try {

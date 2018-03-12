@@ -20,7 +20,7 @@ namespace network {
     }
 
     sockaddr_in server_address(const hostent* host, uint16_t port) {
-        sockaddr_in server {};
+        sockaddr_in server;
         server.sin_family = AF_INET;
         server.sin_port = htons(port);
         copy_n((char*)host->h_addr, host->h_length, (char*)&server.sin_addr.s_addr);
@@ -29,7 +29,7 @@ namespace network {
 
     void connect_to_server(int socket, const string& host_name, uint16_t port) {
         hostent* host {get_host(host_name)};
-        sockaddr_in server {server_address(host, port)};
+        sockaddr_in server = server_address(host, port);
         if (connect(socket, (sockaddr*)&server, sizeof(server))) throw system_error{errno, generic_category()};
     }
 
@@ -56,7 +56,6 @@ namespace network {
             cout << "get_chunk(): bytes: " << bytes << '\n';
             if (bytes == 0) throw system_error{errno, generic_category()};
             if (bytes < 0) throw system_error{errno, generic_category()};
-            cout << "Data: " << string{b.begin(), b.begin() + bytes} << '\n';
             if (last) return;
         }
     }

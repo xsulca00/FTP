@@ -12,7 +12,7 @@ namespace file {
     using Buffer = array<char, 4096>;
 
     struct Chunk {
-        Chunk() : data{}, size{} {}
+        Chunk() : data{{}}, size{} {}
 
         Buffer data;
         long size;
