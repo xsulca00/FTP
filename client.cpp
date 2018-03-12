@@ -18,7 +18,6 @@ extern "C" {
 
 using namespace std;
 using namespace network;
-using namespace network::client;
 using namespace utility;
 using namespace file;
 
@@ -53,7 +52,6 @@ void open_and_send_file(int socket, const string& fname) {
         return;
     }
 
-    send_request(socket, status_messages[100]);
     cout << "Sending bytes\n";
     for (Buffer b; file;) {
         file.read(b.data(), b.size());
@@ -63,17 +61,15 @@ void open_and_send_file(int socket, const string& fname) {
         send_bytes(socket, as_bytes(h), sizeof(h));
         send_bytes(socket, b.data(), h.length);
     }
-    send_response(socket, status_messages[102]);
     cout << "Sending finished\n";
 }
-
 
 void write_file_to_server(int socket, const string& fname) {
     string command {make_command(Flags::write, fname)};
     cout << "Sending command: " << command;
     send_request(socket, command);
-    string response {recieve_response(socket, status_messages[100].length())};
 
+    string response {recieve_response(socket, status_messages[100].length())};
     cout << "Response: " << response << '\n';
     if (response == status_messages[100]) {
         cout << "Begin file transfer\n";

@@ -87,32 +87,57 @@ namespace network {
         write_data_to_file(file, file_data);
     }
 
-    namespace client {
-        void send_request(int socket, const string& command) {
-            ssize_t bytes {send(socket, command.c_str(), command.length(), 0)};
-            if (bytes < 0) throw system_error{errno, generic_category()};
-        }
-
-        string recieve_response(int socket, ssize_t len) {
-            string s(len, '\0');
-
-            ssize_t bytes {};
-            char* b {&s[0]};
-            for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
-                bytes = recv(socket, b, remainder, 0);
-                if (bytes < 0) throw system_error{errno, generic_category()};
-                b += bytes;
-            }
-
-            return s;
-        }
+    void send_bytes(int socket, const char* data, ssize_t len) {
+        ssize_t bytes {send(socket, data, len, 0)};
+        if (bytes < 0) throw system_error{errno, generic_category()};
     }
 
-    namespace server {
-        void send_response(int socket, const string& command) {
-            ssize_t bytes {send(socket, command.c_str(), command.length(), 0)};
+    void send_request(int socket, const string& command) {
+        ssize_t bytes {send(socket, command.c_str(), command.length(), 0)};
+        if (bytes < 0) throw system_error{errno, generic_category()};
+    }
+
+    void send_response(int socket, const string& command) {
+        ssize_t bytes {send(socket, command.c_str(), command.length(), 0)};
+        if (bytes < 0) throw system_error{errno, generic_category()};
+    }
+
+    string recieve_request(int socket, ssize_t len) {
+        cout << "Recieving request\n";
+        string s(len, '\0');
+
+        ssize_t bytes {};
+        char* b {&s[0]};
+        cout << "Before loop\n";
+        for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
+            bytes = recv(socket, b, remainder, 0);
+            if (!bytes) {
+                cout << "Client disconnected\n";
+                break;
+            }
+            cout << "remainder: " << remainder << " bytes: " << bytes << '\n';
             if (bytes < 0) throw system_error{errno, generic_category()};
+            b += bytes;
+
+            if (s.find("READ ") != string::npos || s.find("WRITE ") != string::npos) break;
         }
+        cout << "After loop\n";
+
+        return s;
+    }
+
+    string recieve_response(int socket, ssize_t len) {
+        string s(len, '\0');
+
+        ssize_t bytes {};
+        char* b {&s[0]};
+        for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
+            bytes = recv(socket, b, remainder, 0);
+            if (bytes < 0) throw system_error{errno, generic_category()};
+            b += bytes;
+        }
+
+        return s;
     }
 
 }

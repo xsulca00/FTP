@@ -22,7 +22,6 @@ extern "C" {
 using namespace std;
 using namespace utility;
 using namespace network;
-using namespace network::server;
 using namespace file;
 
 enum class Flags { none, read, write };
@@ -66,35 +65,6 @@ string make_command(Flags f, const string& file) {
         default: throw runtime_error{"invalid flag set, not flags::read nor flags::write"};
     }
     return command += ' ' + file + "\r\n";
-}
-
-void send_bytes(int socket, const char* data, ssize_t len) {
-    ssize_t bytes {send(socket, data, len, 0)};
-    if (bytes < 0) throw system_error{errno, generic_category()};
-}
-
-string recieve_request(int socket, ssize_t len) {
-    cout << "Recieving request\n";
-    string s(len, '\0');
-
-    ssize_t bytes {};
-    char* b {&s[0]};
-    cout << "Before loop\n";
-    for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
-        bytes = recv(socket, b, remainder, 0);
-        if (!bytes) {
-            cout << "Client disconnected\n"; 
-            break;
-        }
-        cout << "remainder: " << remainder << " bytes: " << bytes << '\n';
-        if (bytes < 0) throw system_error{errno, generic_category()};
-        b += bytes;
-
-        if (s.find("READ ") != string::npos || s.find("WRITE ") != string::npos) break;
-    }
-    cout << "After loop\n";
-
-    return s;
 }
 
 Flags get_request_type(const string& s) {
@@ -146,7 +116,7 @@ void open_and_send_file(int socket, const string& fname) {
         send_response(socket, status_messages[101]);
         return;
     } 
-
+ 
     send_response(socket, status_messages[100]);
     cout << "Sending bytes\n";
     for (Buffer b; file;) {
