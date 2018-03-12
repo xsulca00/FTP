@@ -90,17 +90,11 @@ namespace network {
     void send_bytes(int socket, const char* data, ssize_t len) {
         ssize_t bytes {send(socket, data, len, 0)};
         if (bytes < 0) throw system_error{errno, generic_category()};
+        if (bytes == 0) throw system_error{errno, generic_category()};
     }
 
-    void send_request(int socket, const string& command) {
-        ssize_t bytes {send(socket, command.c_str(), command.length(), 0)};
-        if (bytes < 0) throw system_error{errno, generic_category()};
-    }
-
-    void send_response(int socket, const string& command) {
-        ssize_t bytes {send(socket, command.c_str(), command.length(), 0)};
-        if (bytes < 0) throw system_error{errno, generic_category()};
-    }
+    void send_request(int socket, const string& command) { send_bytes(socket, command.c_str(), command.length()); }
+    void send_response(int socket, const string& command) { send_bytes(socket, command.c_str(), command.length()); }
 
     string recieve_request(int socket, ssize_t len) {
         cout << "Recieving request\n";

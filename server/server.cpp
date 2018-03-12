@@ -3,6 +3,7 @@ extern "C" {
 #include <netdb.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <signal.h>
 }
 
 #include <cstring>
@@ -83,7 +84,7 @@ Flags get_request_type(const string& s) {
     return Flags::none;
 }
 
-string get_file_name(int socket, const string& s) {
+string get_file_name(const string& s) {
     auto found {s.find("\r\n")};
     if (found != string::npos) {
         // file name found
@@ -151,7 +152,7 @@ void fill_in_buffer(int socket, Buffer& b) {
             }
 
             // get file name, if not in buffer, recieve more bytes
-            string fname {get_file_name(socket, file_name)};
+            string fname {get_file_name(file_name)};
 
             cout << "Name: " << fname.back() << '\n';
 
@@ -174,12 +175,20 @@ void fill_in_buffer(int socket, Buffer& b) {
     }
 }
 
+Socket server;
+
+void cleanup(int sig, siginfo_t* siginfo, void* context) {
+    cerr << "SIGINT registerered!\n";
+    server.~Socket();
+    exit(1);
+}
+
 int main(int argc, char* argv[]) 
 try {
     Args a {args(argc, argv)};
     check_arguments(a);
 
-    Socket server {create_socket()};
+    server = create_socket();
 
     sockaddr_in sa {};
     sa.sin_family = AF_INET;
@@ -187,17 +196,14 @@ try {
     sa.sin_port = htons(to<uint16_t>(a.port));
 
     int rc {};
-    if ((rc = bind(server, (sockaddr*)&sa, sizeof(sa))) < 0) {
-        throw runtime_error{"Bind failed"};
-    }
+    if ((rc = bind(server, (sockaddr*)&sa, sizeof(sa))) < 0) { throw runtime_error{"Bind failed"}; }
+    if (listen(server, 1) < 0) { throw runtime_error{"Listen failed"}; }
 
-    if (listen(server, 1) < 0) {
-        throw runtime_error{"Listen failed"};
-    }
+    struct sigaction act {};
+    act.sa_sigaction = &cleanup;
+    act.sa_flags = SA_SIGINFO;
 
-    const string begin_file_transfer {"100 Begin file transfer\r\n"};
-    const string cannot_open_file {"101 Cannot open file\r\n"};
-    const string file_transfer_completed {"97 File transfer completed\r\n"};
+    if (::sigaction(SIGINT, &act, nullptr) < 0) throw system_error{errno, generic_category()};
 
     for (;;) {
         sockaddr_in client {};
@@ -211,7 +217,7 @@ try {
             Buffer b;
             fill_in_buffer(client_socket, b);
         } catch (const runtime_error& e) {
-            cerr << "Cannot open communication with client: " << e.what() << '\n';;
+            cerr << "Exception has been thrown: " << e.what() << '\n';;
         }
     }
 
@@ -234,3 +240,5 @@ try {
     cerr << "Exception has been thrown: " << s << '\n';
     return 1;
 }
+
+
