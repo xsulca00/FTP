@@ -69,7 +69,7 @@ namespace network {
         while (!h.last) {
             cout << "Getting header\n";
             h = get_header(socket);
-            if (h.length <= 0) throw runtime_error{"Header length=(" + to_string(h.length) + ") <= 0"};
+            if (h.length < 0) throw runtime_error{"Header length=(" + to_string(h.length) + ") <= 0"};
 
             cout << "h.length = " << h.length << " h.last = " << h.last << '\n';
 
@@ -105,7 +105,7 @@ namespace network {
         cout << "Before loop\n";
         for (ssize_t remainder {len}; remainder > 0; remainder -= bytes) {
             bytes = recv(socket, b, remainder, 0);
-            if (!bytes) {
+            if (bytes == 0) {
                 cout << "Client disconnected\n";
                 break;
             }

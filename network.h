@@ -24,14 +24,10 @@ namespace network {
 
     class Socket {
     public:
-        Socket() : socket{-1} {}
         Socket(int s) : socket{s} { if (socket <= 0) throw runtime_error{"Invalid socket"}; }
-        ~Socket() { if (socket != -1) close(socket); }
+        ~Socket() { close(socket); }
 
-        operator int() {
-            if (socket == -1) throw runtime_error{"Invalid socket"};
-            return socket; 
-        }
+        operator int() { return socket; }
     private:
         int socket;
     };

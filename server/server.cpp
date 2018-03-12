@@ -4,6 +4,7 @@ extern "C" {
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <signal.h>
+#include <sys/stat.h>
 }
 
 #include <cstring>
@@ -95,6 +96,25 @@ string get_file_name(const string& s) {
 
 void open_and_recieve_file(int socket, const string& fname) {
     cout << "Opening file " << fname << '\n';
+
+    if (!fname.empty() && fname.front() == '/') {
+        cerr << "Cannot access root directory: " << fname << '\n';
+        send_response(socket, status_messages[101]);
+        return;
+    }
+
+    auto p = get_path_and_file(fname);
+
+    string path;
+    for (const string& dir : p.first) {
+        path += dir + '/';
+        if (mkdir(path.c_str(), 0777) < 0) {
+            perror("mkdir");
+            send_response(socket, status_messages[101]);
+            return;
+        }
+    }
+
     ofstream file {fname, ios_base::binary};
     if (!file) {
         cerr << "Cannot open file \"" << fname << "\": " << error_code{errno, generic_category()}.message() << '\n';
@@ -111,6 +131,7 @@ void open_and_recieve_file(int socket, const string& fname) {
 
 void open_and_send_file(int socket, const string& fname) {
     cout << "Opening file " << fname << '\n';
+
     ifstream file {fname, ios_base::binary};
     if (!file) {
         cerr << "Cannot open file \"" << fname << "\": " << error_code{errno, generic_category()}.message() << '\n';
@@ -175,11 +196,11 @@ void fill_in_buffer(int socket, Buffer& b) {
     }
 }
 
-Socket server;
+int socket_to_close;
 
-void cleanup(int sig, siginfo_t* siginfo, void* context) {
+void cleanup(int, siginfo_t*, void*) {
     cerr << "SIGINT registerered!\n";
-    server.~Socket();
+    close(socket_to_close);
     exit(1);
 }
 
@@ -188,7 +209,8 @@ try {
     Args a {args(argc, argv)};
     check_arguments(a);
 
-    server = create_socket();
+    Socket server {create_socket()};
+    socket_to_close = server;
 
     sockaddr_in sa {};
     sa.sin_family = AF_INET;
@@ -203,7 +225,7 @@ try {
     act.sa_sigaction = &cleanup;
     act.sa_flags = SA_SIGINFO;
 
-    if (::sigaction(SIGINT, &act, nullptr) < 0) throw system_error{errno, generic_category()};
+    if (sigaction(SIGINT, &act, nullptr) < 0) throw system_error{errno, generic_category()};
 
     for (;;) {
         sockaddr_in client {};

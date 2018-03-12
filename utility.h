@@ -4,6 +4,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace utility {
     using namespace std;
@@ -27,6 +28,8 @@ namespace utility {
 
     void remove_trailing_rn(string& s);
     void check_negative(const string& s);
+    pair<vector<string>, string> get_path_and_file(const string& path);
+
 }
 
 
