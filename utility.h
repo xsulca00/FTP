@@ -29,7 +29,7 @@ namespace utility {
     void remove_trailing_rn(string& s);
     void check_negative(const string& s);
     pair<vector<string>, string> get_path_and_file(const string& path);
-
+    bool file_exists(const string& s);
 }
 
 

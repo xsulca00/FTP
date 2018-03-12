@@ -35,7 +35,7 @@ struct Args {
 map<int, string> status_messages {
     {100, "100 Begin file transfer\r\n"},
     {101, "101 Can not open a file\r\n"},
-    {102, "102 File transfer completed\r\n"}
+    {102, "102 Transfer completed.\r\n"}
 };
 
 void check_flag(Flags f) {
@@ -95,14 +95,8 @@ string get_file_name(const string& s) {
 }
 
 void open_and_recieve_file(int socket, const string& fname) {
-    cout << "Opening file " << fname << '\n';
 
-    string response {recieve_response(socket, status_messages[101].length())};
-    if (response == status_messages[101]) {
-        cerr << "Client could not open the file to send\n";
-        return;
-    }
-
+    cout << "Checking file path\n";
     if (!fname.empty() && fname.front() == '/') {
         cerr << "Cannot access root directory: " << fname << '\n';
         send_response(socket, status_messages[101]);
@@ -111,13 +105,15 @@ void open_and_recieve_file(int socket, const string& fname) {
 
     auto p = get_path_and_file(fname);
 
-    string path;
-    for (const string& dir : p.first) {
-        path += dir + '/';
-        if (mkdir(path.c_str(), 0777) < 0) {
-            perror("mkdir");
-            send_response(socket, status_messages[101]);
-            return;
+    if (!file_exists(fname)) {
+        string path;
+        for (const string& dir : p.first) {
+            path += dir + '/';
+            if (mkdir(path.c_str(), 0777) < 0) {
+                perror("mkdir");
+                send_response(socket, status_messages[101]);
+                return;
+            }
         }
     }
 
@@ -127,7 +123,9 @@ void open_and_recieve_file(int socket, const string& fname) {
         send_response(socket, status_messages[101]);
         return;
     } 
+    cout << "File path checked\n";
 
+    send_response(socket, status_messages[100]);
     cout << "Recieving bytes\n";
     recieve_and_write_file(socket, file);
     cout << "Recieving finished\n";

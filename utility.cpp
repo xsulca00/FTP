@@ -1,3 +1,7 @@
+extern "C" {
+#include <unistd.h>
+}
+
 #include "utility.h"
 #include <string>
 #include <stdexcept>
@@ -31,5 +35,7 @@ namespace utility {
 
         return {dirs, file};
     }
+
+    bool file_exists(const string& fname) { return access(fname.c_str(), F_OK | W_OK) != -1; }
 
 }

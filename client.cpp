@@ -34,7 +34,7 @@ struct Args {
 map<int, string> status_messages {
     {100, "100 Begin file transfer\r\n"},
     {101, "101 Can not open a file\r\n"},
-    {102, "102 File transfer completed\r\n"}
+    {102, "102 Transfer completed.\r\n"}
 };
 
 void check_flag(Flags f);
@@ -58,30 +58,31 @@ void send_file(int socket, ifstream& file) {
 }
 
 void write_file_to_server(int socket, const string& fname) {
+    // open succeeds ?
+    ifstream file {fname, ios_base::binary};
+    if (!file) throw system_error{errno, generic_category()};
+
+    // sending WRITE
     string command {make_command(Flags::write, fname)};
     cout << "Sending command: " << command;
     send_request(socket, command);
 
-    cout << "Opening file " << fname << '\n';
-    ifstream file {fname, ios_base::binary};
-    if (!file) {
-        cerr << "Cannot open file \"" << fname << "\": " << error_code{errno, generic_category()}.message() << '\n';
-        send_response(socket, status_messages[101]);
+    // get response from server
+    string response {recieve_response(socket, status_messages[100].length())};
+    cout << "Response: " << response << '\n';
+
+    // server cannot open file
+    if (response == status_messages[101]) {
+        cerr << "File on server cannot be opened\n";
         return;
     }
 
-    string response {recieve_response(socket, status_messages[100].length())};
-    cout << "Response: " << response << '\n';
+    // transmit can begin
     if (response == status_messages[100]) {
         cout << "Begin file transfer\n";
         send_file(socket, file);
-        recieve_transfer_completed_message(socket);
         cout << "File transfer completed\n";
-        return;
-    }
-
-    if (response == status_messages[101]) {
-        cerr << "File cannot be opened\n";
+        recieve_transfer_completed_message(socket);
         return;
     }
 
@@ -148,9 +149,9 @@ string make_command(Flags f, const string& file) {
 }
 
 void recieve_transfer_completed_message(int socket) {
-    string response1 {recieve_response(socket, status_messages[102].length())};
-    if (response1 != status_messages[102]) {
-        throw runtime_error{"Server did not confirmed that file transfer is completed, this message was sent instead: " + response1}; 
+    string response {recieve_response(socket, status_messages[102].length())};
+    if (response != status_messages[102]) {
+        throw runtime_error{"Server did not confirmed that file transfer is completed, this message was sent instead: " + response}; 
     }
 }
 
